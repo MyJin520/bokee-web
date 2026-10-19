@@ -1,0 +1,116 @@
+/** 通用 API 响应结构 */
+export interface ApiResponse<T = unknown> {
+  code: number
+  data: T
+  msg: string
+}
+
+/** 分页数据结构 */
+export interface PageData<T> {
+  list: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/** 文章列表项 */
+export interface ArticleListItem {
+  id: number
+  title: string
+  summary: string
+  cover: string
+  viewCount: number
+  favoriteCount: number
+  likeCount: number
+  isTop: boolean
+  userId: number
+  createdAt: string
+}
+
+/** 文章作者公开信息 */
+export interface AuthorInfo {
+  id: number
+  name: string
+  avatar: string
+}
+
+/** 文章详情 */
+export interface ArticleInfo {
+  id: number
+  title: string
+  content: string
+  summary: string
+  cover: string
+  viewCount: number
+  favoriteCount: number
+  likeCount: number
+  isTop: boolean
+  userId: number
+  author: AuthorInfo
+  createdAt: string
+  updatedAt: string
+}
+
+/** 登录响应 */
+export interface JwtResp {
+  token: string
+  name: string
+  avatar: string
+  email: string
+  phone: string
+}
+
+/** 用户信息 */
+export interface UserInfo {
+  id: number
+  name: string
+  phone: string
+  email: string
+  status: string
+  avatar: string
+  followersCount: number
+  roles: UserRole[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface UserRole {
+  id: number
+  name: string
+  code: number
+}
+
+/** 用户简要信息（find_users 返回：id / 昵称 / 头像 / 粉丝数 / 加入时间） */
+export interface UserBrief {
+  id: number
+  name: string
+  avatar: string
+  followersCount: number
+  createdAt: string
+}
+
+/** 文件上传记录 */
+export interface UploadedFile {
+  id: number
+  url: string
+  ext: string
+  size: number
+  originalName: string
+  hash: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** 用户操作类型：点赞 / 收藏 / 关注 */
+export type ActionType = 'like' | 'bookmark' | 'follow'
+
+/** 用户操作目标类型：文章 / 作者 */
+export type TargetType = 'article' | 'author'
+
+/** 用户操作列表项（扁平结构，按 targetType 解释 targetTitle：文章标题 / 作者名称） */
+export interface UserActionListItem {
+  actionId: number
+  targetType: TargetType
+  targetId: number
+  targetTitle: string
+}
