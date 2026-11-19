@@ -19,6 +19,37 @@ releases 目录       →  /home/kim/composes/nginx/releases/v1.0.0/
 > 同一个版本号重复推送会覆盖 MinIO 里同名的产物（与后端 `v1.0.x` 镜像 tag 行为一致），
 > 需要留痕时请递增 `VERSION`。
 
+## 如何确认服务器上跑的是哪个版本
+
+后端靠 `docker images` 的 tag 就能看出镜像版本；前端是静态文件，解压进 `dist/` 后就没有版本信息了，
+所以用四层标识来保证"可追踪、可校验"：
+
+| 层级 | 位置 | 作用 |
+| --- | --- | --- |
+| 拉取来源 | MinIO `web/<版本>/bokee-web.tar.gz` | 部署只从这个路径拉，"路径即版本" |
+| 包内清单 | 产物里的 `version.json` | 构建时写入 `version`/`commit`/`builtAt`；部署前校验与请求版本是否一致，不一致直接失败 |
+| 部署记录 | `/home/kim/composes/nginx/current.json` | 记录本次部署的版本、产物路径、包 sha256、部署时间 |
+| 线上自检 | `https://bokee.online/version.json` | 部署后回源请求，确认线上确实切换到了该版本 |
+
+任何一层都能独立回答"线上是什么版本"：
+
+```bash
+# 一条命令看全：dist 版本、最近部署记录、本地留档、MinIO 已有版本
+/home/kim/composes/nginx/deploy.sh status
+
+# 从外网看线上版本（version.json 随站点一起发布）
+curl -s https://bokee.online/version.json
+```
+
+包内清单长这样（CI 每次构建自动生成）：
+
+```json
+{ "version": "v1.0.0", "commit": "1dd79ce", "builtAt": "2026-11-19 14:39:52" }
+```
+
+如果 MinIO 里某个版本路径下的包内容和路径对不上（比如手工传错文件），部署脚本会在解压后立刻报
+`版本不匹配：请求 vX，但产物里写的是 vY` 并以非 0 退出，`script_stop` 会让流水线红灯，不会把错误产物发布出去。
+
 ## 流水线结构
 
 ```
@@ -65,9 +96,10 @@ push main/develop ─┬─ build-web-job
 
 ```
 /home/kim/composes/nginx/
-├─ dist/                       nginx 对外提供的站点目录（容器挂载为只读）
+├─ dist/                       nginx 对外提供的站点目录（容器挂载为只读），内含 version.json
 ├─ incoming/deploy/deploy.sh   CI 每次上传的部署脚本
 ├─ releases/<版本>/            每次部署留存的副本，供快速回滚
+├─ current.json               最近一次部署记录（版本 / 产物路径 / sha256 / 时间）
 ├─ deploy.sh                   部署脚本（本机副本，也可手工执行）
 ├─ nginx.conf / docker-compose.yaml / ssl/
 └─ .staging-<版本>/、.download-<版本>.tar.gz   临时目录，部署结束自动清理
@@ -92,6 +124,9 @@ MinIO（bokee-artifacts 桶）
 ## 手工操作（在服务器上）
 
 ```bash
+# 查看线上当前版本、最近部署记录、本地留档与 MinIO 已有版本
+/home/kim/composes/nginx/deploy.sh status
+
 # 查看本地保留的历史版本
 /home/kim/composes/nginx/deploy.sh list
 

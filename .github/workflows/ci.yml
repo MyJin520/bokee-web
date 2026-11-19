@@ -41,7 +41,7 @@ jobs:
       - name: Type check and build
         run: npm run build
 
-      # 5. 读取 VERSION 版本号并打包 dist
+      # 5. 读取 VERSION 版本号，写入版本清单并打包 dist
       - name: Package dist
         id: build
         run: |
@@ -49,10 +49,20 @@ jobs:
           test -n "$APP_VERSION"
           TARBALL="bokee-web-${APP_VERSION}.tar.gz"
 
+          # 版本清单随产物发布，服务器据此确认 dist 里是哪个版本
+          cat > dist/version.json <<EOF
+          {
+            "version": "${APP_VERSION}",
+            "commit": "$(git rev-parse --short HEAD)",
+            "builtAt": "$(TZ=Asia/Shanghai date '+%F %T')"
+          }
+          EOF
+
           # 压缩包内为 dist 的平铺内容，部署脚本解压后直接落到 nginx 的 dist/
           tar -czf "$TARBALL" -C dist .
           test -s "$TARBALL"
           tar -tzf "$TARBALL" | grep -qx './index.html'
+          tar -tzf "$TARBALL" | grep -qx './version.json'
 
           echo "version=$APP_VERSION" >> "$GITHUB_OUTPUT"
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
