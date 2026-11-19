@@ -114,3 +114,52 @@ export interface UserActionListItem {
   targetId: number
   targetTitle: string
 }
+
+/** ============ 用户反馈 ============ */
+
+/** 反馈类型：Bug / 优化建议 / 新功能建议 / 其他 */
+export type FeedbackType = 'bug' | 'optimize' | 'feature' | 'other'
+
+/** 反馈处理状态：待处理 / 处理中 / 已解决 / 不处理 */
+export type FeedbackStatus = 'pending' | 'processing' | 'resolved' | 'ignored'
+
+/** 反馈提交者信息 */
+export interface FeedbackUser {
+  id: number
+  name: string
+  avatar: string
+}
+
+/** 反馈列表项 */
+export interface FeedbackListItem {
+  id: number
+  type: FeedbackType
+  title: string
+  content: string
+  /** 截图地址，取自文件上传接口返回的 url */
+  images: string[] | null
+  /** 仅超管或提交者本人可见，其余情况为空串 */
+  pageUrl: string
+  /** 仅超管或提交者本人可见，其余情况为空串 */
+  contact: string
+  status: FeedbackStatus
+  reply: string
+  repliedAt: string | null
+  userId: number
+  user: FeedbackUser | null
+  createdAt: string
+}
+
+/** 反馈统计项（key 为类型或状态枚举值） */
+export interface FeedbackCountItem {
+  key: string
+  count: number
+}
+
+/** 反馈统计（仅超管） */
+export interface FeedbackSummary {
+  total: number
+  pending: number
+  byType: FeedbackCountItem[]
+  byStatus: FeedbackCountItem[]
+}

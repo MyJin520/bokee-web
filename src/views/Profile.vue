@@ -158,9 +158,10 @@ onMounted(async () => {
       <span class="eyebrow">My account</span>
       <h1>个人中心</h1>
       <p v-if="userStore.userInfo">
-        注册于 {{ formatDate(userStore.userInfo.createdAt) }} ·
-        角色：{{ userStore.userInfo.roles.map((r) => r.name).join('、') || '普通用户' }} ·
-        粉丝 {{ formatNumber(userStore.userInfo.followersCount) }}
+        注册于 {{ formatDate(userStore.userInfo.createdAt) }} · 角色：{{
+          userStore.userInfo.roles.map((r) => r.name).join('、') || '普通用户'
+        }}
+        · 粉丝 {{ formatNumber(userStore.userInfo.followersCount) }}
       </p>
     </header>
 
@@ -174,10 +175,21 @@ onMounted(async () => {
             <template v-else>{{ initialOf(profileForm.userName || '我') }}</template>
           </span>
           <div>
-            <button class="btn btn-outline btn-sm" type="button" :disabled="uploadingAvatar" @click="pickAvatar">
+            <button
+              class="btn btn-outline btn-sm"
+              type="button"
+              :disabled="uploadingAvatar"
+              @click="pickAvatar"
+            >
               {{ uploadingAvatar ? '上传中…' : '更换头像' }}
             </button>
-            <input ref="fileInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden @change="onAvatarChange" />
+            <input
+              ref="fileInput"
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              hidden
+              @change="onAvatarChange"
+            />
             <p class="form-hint">JPG / PNG / GIF / WebP，≤32MB</p>
           </div>
         </div>
@@ -189,7 +201,13 @@ onMounted(async () => {
         <input v-model="profileForm.email" class="field-input" type="email" placeholder="选填" />
 
         <label class="field-label">手机号</label>
-        <input v-model="profileForm.phone" class="field-input" type="tel" maxlength="11" placeholder="选填" />
+        <input
+          v-model="profileForm.phone"
+          class="field-input"
+          type="tel"
+          maxlength="11"
+          placeholder="选填"
+        />
 
         <div style="margin-top: 22px">
           <button class="btn" type="button" :disabled="savingProfile" @click="saveProfile">
@@ -202,19 +220,45 @@ onMounted(async () => {
         <section class="surface-card profile-card-block">
           <p class="side-title">Password · 修改密码</p>
           <label class="field-label">旧密码</label>
-          <input v-model="passwordForm.oldPassword" class="field-input" type="password" autocomplete="current-password" />
-          <p v-if="passwordErrors.oldPassword" class="form-error">{{ passwordErrors.oldPassword }}</p>
+          <input
+            v-model="passwordForm.oldPassword"
+            class="field-input"
+            type="password"
+            autocomplete="current-password"
+          />
+          <p v-if="passwordErrors.oldPassword" class="form-error">
+            {{ passwordErrors.oldPassword }}
+          </p>
 
           <label class="field-label">新密码</label>
-          <input v-model="passwordForm.newPassword" class="field-input" type="password" autocomplete="new-password" />
-          <p v-if="passwordErrors.newPassword" class="form-error">{{ passwordErrors.newPassword }}</p>
+          <input
+            v-model="passwordForm.newPassword"
+            class="field-input"
+            type="password"
+            autocomplete="new-password"
+          />
+          <p v-if="passwordErrors.newPassword" class="form-error">
+            {{ passwordErrors.newPassword }}
+          </p>
 
           <label class="field-label">确认新密码</label>
-          <input v-model="passwordForm.confirmPassword" class="field-input" type="password" autocomplete="new-password" />
-          <p v-if="passwordErrors.confirmPassword" class="form-error">{{ passwordErrors.confirmPassword }}</p>
+          <input
+            v-model="passwordForm.confirmPassword"
+            class="field-input"
+            type="password"
+            autocomplete="new-password"
+          />
+          <p v-if="passwordErrors.confirmPassword" class="form-error">
+            {{ passwordErrors.confirmPassword }}
+          </p>
 
           <div style="margin-top: 20px">
-            <button class="btn btn-coral" type="button" :disabled="savingPassword" @click="savePassword">
+            <button
+              class="btn btn-coral"
+              type="button"
+              :disabled="savingPassword"
+              @click="savePassword"
+            >
               {{ savingPassword ? '提交中…' : '修改密码' }}
             </button>
           </div>
@@ -222,12 +266,30 @@ onMounted(async () => {
 
         <section class="surface-card profile-card-block quick-card">
           <p class="side-title">Quick links · 快捷入口</p>
-          <button class="quick-row" type="button" @click="router.push('/articles/create')">＋ 写新文章</button>
-          <button class="quick-row" type="button" @click="router.push('/my-articles')">📄 我的文章</button>
-          <button class="quick-row" type="button" @click="router.push('/my/bookmarks')">♥ 我的收藏</button>
-          <button class="quick-row" type="button" @click="router.push('/my/follows')">＋ 我的关注</button>
-          <button class="quick-row" type="button" @click="router.push('/authors')">🔍 发现作者</button>
-          <button v-if="userStore.isAdmin" class="quick-row" type="button" @click="router.push('/users')">
+          <button class="quick-row" type="button" @click="router.push('/articles/create')">
+            ＋ 写新文章
+          </button>
+          <button class="quick-row" type="button" @click="router.push('/my-articles')">
+            📄 我的文章
+          </button>
+          <button class="quick-row" type="button" @click="router.push('/my/bookmarks')">
+            ♥ 我的收藏
+          </button>
+          <button class="quick-row" type="button" @click="router.push('/my/follows')">
+            ＋ 我的关注
+          </button>
+          <button class="quick-row" type="button" @click="router.push('/feedback')">
+            💬 反馈中心
+          </button>
+          <button class="quick-row" type="button" @click="router.push('/authors')">
+            🔍 发现作者
+          </button>
+          <button
+            v-if="userStore.isAdmin"
+            class="quick-row"
+            type="button"
+            @click="router.push('/users')"
+          >
             👥 用户管理
           </button>
           <button class="quick-row danger" type="button" @click="logout">退出登录</button>

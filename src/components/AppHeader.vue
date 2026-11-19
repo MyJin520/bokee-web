@@ -3,12 +3,15 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useUiStore } from '@/stores/ui'
+import FeedbackModal from '@/components/FeedbackModal.vue'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const ui = useUiStore()
 const menuOpen = ref(false)
+/** 反馈弹窗开关：头部「反馈」按钮直接唤起提交表单 */
+const feedbackOpen = ref(false)
 
 const displayName = computed(
   () => userStore.userInfo?.name || localStorage.getItem('userName') || '我的账户',
@@ -31,6 +34,12 @@ const navItems: NavItem[] = [
     to: '/authors',
     requiresAuth: true,
     match: (path: string) => path.startsWith('/authors'),
+  },
+  {
+    label: '反馈',
+    to: '/feedback',
+    requiresAuth: true,
+    match: (path: string) => path.startsWith('/feedback'),
   },
   { label: '专题', to: '/#topics', match: () => false },
   { label: '关于', to: '/#about', match: () => false },
@@ -104,11 +113,28 @@ async function logout() {
       </nav>
 
       <div class="header-actions">
-        <button class="header-icon" type="button" aria-label="搜索文章" title="搜索" @click="focusSearch">
+        <button
+          class="header-icon"
+          type="button"
+          aria-label="搜索文章"
+          title="搜索"
+          @click="focusSearch"
+        >
           ⌕
         </button>
         <template v-if="userStore.isLoggedIn">
-          <button class="write-button" type="button" @click="go('/articles/create')">＋ 写文章</button>
+          <button
+            class="header-icon feedback-entry"
+            type="button"
+            aria-label="提交反馈"
+            title="快速提交反馈"
+            @click="feedbackOpen = true"
+          >
+            ＋ 反馈
+          </button>
+          <button class="write-button" type="button" @click="go('/articles/create')">
+            ＋ 写文章
+          </button>
           <button class="account" type="button" @click="go('/profile')">
             <span class="account-avatar">
               <img v-if="avatarUrl" :src="avatarUrl" :alt="displayName" />
@@ -145,6 +171,7 @@ async function logout() {
         <button type="button" @click="go('/my-articles')">我的文章</button>
         <button type="button" @click="go('/my/bookmarks')">我的收藏</button>
         <button type="button" @click="go('/my/follows')">我的关注</button>
+        <button type="button" @click="go('/feedback')">反馈中心</button>
         <button type="button" @click="go('/profile')">个人中心</button>
         <button v-if="userStore.isAdmin" type="button" @click="go('/users')">用户管理</button>
         <button type="button" @click="logout">退出登录</button>
@@ -154,6 +181,8 @@ async function logout() {
         <button type="button" @click="go('/register')">注册</button>
       </template>
     </nav>
+
+    <FeedbackModal :open="feedbackOpen" @close="feedbackOpen = false" />
   </header>
 </template>
 
@@ -252,6 +281,20 @@ async function logout() {
 .header-icon:hover,
 .menu-button:hover {
   border-color: var(--ink);
+}
+
+.feedback-entry {
+  width: auto;
+  min-width: 37px;
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.feedback-entry:hover {
+  border-color: var(--coral);
+  color: var(--coral-dark);
 }
 
 .write-button,
