@@ -59,6 +59,14 @@ npm run preview   # 本地预览构建产物
 
 构建产物输出到 `dist/`，可直接交给静态站点服务托管。
 
+## 部署
+
+版本号由根目录的 `VERSION` 文件决定。推送到 `main` / `develop` 分支会触发 GitHub Actions
+（`.github/workflows/ci.yml`）：构建 → 按版本号把产物备份到 MinIO（`web/<版本>/`）→ 按版本号
+从 MinIO 拉取并发布到服务器的 `/home/kim/composes/nginx/dist`。
+
+所需 Secrets、目录约定与回滚方式见 [docs/deploy.md](docs/deploy.md)。
+
 ## 代码质量
 
 ```sh

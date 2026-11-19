@@ -1,0 +1,144 @@
+name: Build and Deploy Web
+
+# 推送到 main / develop 分支时执行，也支持手动触发
+# 与 bokee-server 的流水线保持同一套结构：
+#   构建产物 -> 按 VERSION 版本号推送到 MinIO -> SSH 按版本号部署
+on:
+  push:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+# 同一分支串行部署，避免两次构建同时替换 dist 目录
+concurrency:
+  group: deploy-web-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # 构建前端静态产物
+  build-web-job:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+      tarball: ${{ steps.build.outputs.tarball }}
+    steps:
+      # 1. 拉取仓库代码
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # 2. 安装 Node（package.json engines 要求 ^22.18.0 || >=24.12.0）
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # 3. 按 lock 文件精确安装依赖
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # 4. 类型检查 + 生产构建（npm run build = vue-tsc + vite build）
+      - name: Type check and build
+        run: npm run build
+
+      # 5. 读取 VERSION 版本号并打包 dist
+      - name: Package dist
+        id: build
+        run: |
+          APP_VERSION="$(tr -d '\r\n' < VERSION)"
+          test -n "$APP_VERSION"
+          TARBALL="bokee-web-${APP_VERSION}.tar.gz"
+
+          # 压缩包内为 dist 的平铺内容，部署脚本解压后直接落到 nginx 的 dist/
+          tar -czf "$TARBALL" -C dist .
+          test -s "$TARBALL"
+          tar -tzf "$TARBALL" | grep -qx './index.html'
+
+          echo "version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "构建版本: $APP_VERSION（产物 $(du -h "$TARBALL" | cut -f1)）"
+
+      # 6. 上传产物，供下游任务下载
+      - name: Upload web dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bokee-web
+          path: bokee-web-*.tar.gz
+          retention-days: 30
+
+  # 按版本号把产物备份到 MinIO（与后端 server/<版本>/ 结构对应，改为 web/<版本>/）
+  push-minio-job:
+    runs-on: ubuntu-latest
+    needs: build-web-job
+    env:
+      APP_VERSION: ${{ needs.build-web-job.outputs.version }}
+      MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+      MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+      MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+      MINIO_BUCKET: ${{ vars.MINIO_BUCKET || 'bokee-artifacts' }}
+    steps:
+      # 1. 下载构建任务上传的产物
+      - name: Download web dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bokee-web
+
+      # 2. 下载 mc 客户端，配置 MinIO 并按版本号上传
+      - name: Upload package to MinIO
+        run: |
+          curl -fsSL -o mc "https://github.com/minio/mc/releases/download/RELEASE.2025-08-13T08-35-41Z/mc.linux-amd64.RELEASE.2025-08-13T08-35-41Z"
+          chmod +x mc
+
+          ./mc alias set minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
+
+          cp "bokee-web-${APP_VERSION}.tar.gz" bokee-web.tar.gz
+
+          # 版本目录留档 + 覆盖 latest 固定文件
+          ./mc cp bokee-web.tar.gz "minio/$MINIO_BUCKET/web/$APP_VERSION/bokee-web.tar.gz"
+          ./mc cp "minio/$MINIO_BUCKET/web/$APP_VERSION/bokee-web.tar.gz" "minio/$MINIO_BUCKET/web/bokee-web.tar.gz"
+
+  # 部署到服务器：按版本号从 MinIO 拉取产物并替换 dist
+  deploy-job:
+    name: Deploy to production server
+    runs-on: ubuntu-latest
+    # 等产物成功备份到 MinIO 后再部署，保证"能部署的版本一定在 MinIO 里"
+    needs: [build-web-job, push-minio-job]
+    env:
+      APP_VERSION: ${{ needs.build-web-job.outputs.version }}
+    steps:
+      # 1. 确保服务器上的脚本目录存在（首次部署或目录被清理时兜底）
+      - name: Ensure remote directories
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: mkdir -p /home/kim/composes/nginx/incoming/deploy
+          script_stop: true
+
+      # 2. 上传部署脚本（保证服务端执行的就是仓库里的最新脚本）
+      - name: Upload deploy script to server
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          username: ${{ secrets.DEPLOY_USER }}
+          # 私钥内容（完整 PEM），对应服务器上已装好的公钥
+          key: ${{ secrets.DEPLOY_KEY }}
+          source: "deploy/deploy.sh"
+          target: /home/kim/composes/nginx/incoming
+          overwrite: true
+
+      # 3. 远程执行：deploy.sh deploy <版本号>
+      #    脚本会从 MinIO 按版本拉取产物、留存 releases/<版本>、同步进 dist、自检、清理旧版本
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: bash /home/kim/composes/nginx/incoming/deploy/deploy.sh deploy "${{ env.APP_VERSION }}"
+          # 脚本返回非 0 时让任务失败，便于第一时间发现部署异常
+          script_stop: true
