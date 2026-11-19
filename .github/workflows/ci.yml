@@ -116,7 +116,11 @@ jobs:
     env:
       APP_VERSION: ${{ needs.build-web-job.outputs.version }}
     steps:
-      # 1. 确保服务器上的脚本目录存在（首次部署或目录被清理时兜底）
+      # 1. 拉取仓库代码（deploy/deploy.sh 从这里上传到服务器）
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # 2. 确保服务器上的脚本目录存在（首次部署或目录被清理时兜底）
       - name: Ensure remote directories
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -127,7 +131,7 @@ jobs:
           script: mkdir -p /home/kim/composes/nginx/incoming/deploy
           script_stop: true
 
-      # 2. 上传部署脚本（保证服务端执行的就是仓库里的最新脚本）
+      # 3. 上传部署脚本（保证服务端执行的就是仓库里的最新脚本）
       - name: Upload deploy script to server
         uses: appleboy/scp-action@v1
         with:
@@ -140,7 +144,7 @@ jobs:
           target: /home/kim/composes/nginx/incoming
           overwrite: true
 
-      # 3. 远程执行：deploy.sh deploy <版本号>
+      # 4. 远程执行：deploy.sh deploy <版本号>
       #    脚本会从 MinIO 按版本拉取产物、留存 releases/<版本>、同步进 dist、自检、清理旧版本
       - name: SSH deploy
         uses: appleboy/ssh-action@v1.2.0
