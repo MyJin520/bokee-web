@@ -64,7 +64,7 @@ function onClose() {
   emit('close')
 }
 
-/** 跳转反馈中心：提交后可以在这里查看进度与官方回复 */
+/** 跳转反馈中心：提交后可以在这里查看进度与官方答复 */
 function goCenter() {
   emit('close')
   router.push('/feedback')
@@ -186,6 +186,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         </header>
 
         <div class="panel-body">
+          <div class="public-notice">
+            提交后所有登录用户都能看到这条反馈并参与讨论。联系方式与页面地址仅管理员和你本人可见，但标题、正文和截图都会公开，请不要放账号、手机号、身份证号等信息。
+          </div>
+
           <label class="field-label">反馈类型 <span class="required">*</span></label>
           <div class="type-grid">
             <button
@@ -356,6 +360,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .panel-body {
   padding: 8px 28px 4px;
   overflow-y: auto;
+}
+
+.public-notice {
+  margin: 4px 0 16px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--coral);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
 }
 
 .type-grid {

@@ -20,6 +20,7 @@ import {
 import FeedbackModal from '@/components/FeedbackModal.vue'
 import FeedbackHandleModal from '@/components/FeedbackHandleModal.vue'
 import FeedbackCard from '@/components/FeedbackCard.vue'
+import FeedbackReplyPanel from '@/components/FeedbackReplyPanel.vue'
 
 const userStore = useUserStore()
 const ui = useUiStore()
@@ -41,6 +42,7 @@ const STATUS_OPTIONS = [
 const activeTab = ref<TabKey>('mine')
 const submitOpen = ref(false)
 const handleTarget = ref<FeedbackListItem | null>(null)
+const discussTarget = ref<FeedbackListItem | null>(null)
 
 const mineList = ref<FeedbackListItem[]>([])
 const mineTotal = ref(0)
@@ -59,7 +61,6 @@ const summary = ref<FeedbackSummary | null>(null)
 const exporting = ref(false)
 
 const isAdmin = computed(() => userStore.isAdmin)
-const allTabLabel = computed(() => (isAdmin.value ? '全部反馈' : '大家的反馈'))
 const minePages = computed(() => Math.max(1, Math.ceil(mineTotal.value / PAGE_SIZE)))
 const allPages = computed(() => Math.max(1, Math.ceil(allTotal.value / PAGE_SIZE)))
 
@@ -161,6 +162,10 @@ function openHandle(feedback: FeedbackListItem) {
   handleTarget.value = feedback
 }
 
+function openDiscuss(feedback: FeedbackListItem) {
+  discussTarget.value = feedback
+}
+
 async function removeFeedback(feedback: FeedbackListItem) {
   const ok = await ui.confirm({
     title: '删除反馈',
@@ -217,7 +222,7 @@ onMounted(async () => {
       <div>
         <span class="eyebrow">Feedback</span>
         <h1>反馈中心</h1>
-        <p>Bug、待优化、新功能建议都可以提交；管理员会在这里统一处理。</p>
+        <p>Bug、待优化、新功能建议都可以提交；反馈对所有人可见，可以一起讨论，管理员负责处理。</p>
       </div>
       <button class="btn btn-coral" type="button" @click="submitOpen = true">＋ 提交反馈</button>
     </header>
@@ -237,7 +242,7 @@ onMounted(async () => {
         role="tab"
         @click="switchTab('all')"
       >
-        {{ allTabLabel }}
+        全部反馈
       </button>
     </div>
 
@@ -256,7 +261,12 @@ onMounted(async () => {
       </div>
       <template v-else-if="mineList.length">
         <div class="feedback-list">
-          <FeedbackCard v-for="feedback in mineList" :key="feedback.id" :feedback="feedback" />
+          <FeedbackCard
+            v-for="feedback in mineList"
+            :key="feedback.id"
+            :feedback="feedback"
+            @discuss="openDiscuss"
+          />
         </div>
         <div class="pagination">
           <button
@@ -292,7 +302,7 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- 全部 / 大家的反馈 -->
+    <!-- 全部反馈 -->
     <section v-else class="tab-panel">
       <div v-if="isAdmin && summary" class="summary-row">
         <div class="stat">
@@ -361,10 +371,6 @@ onMounted(async () => {
         </div>
       </form>
 
-      <p v-if="!isAdmin" class="visibility-hint">
-        当前为普通用户视角：只展示非 Bug 反馈，Bug 反馈仅管理员与你本人可见。
-      </p>
-
       <div v-if="allLoading" class="state-block">
         <div class="spinner"></div>
         <p>正在读取反馈…</p>
@@ -387,6 +393,7 @@ onMounted(async () => {
             :manageable="isAdmin"
             @handle="openHandle"
             @remove="removeFeedback"
+            @discuss="openDiscuss"
           />
         </div>
         <div class="pagination">
@@ -427,6 +434,11 @@ onMounted(async () => {
     <FeedbackHandleModal
       :feedback="handleTarget"
       @close="handleTarget = null"
+      @updated="refreshCurrent"
+    />
+    <FeedbackReplyPanel
+      :feedback="discussTarget"
+      @close="discussTarget = null"
       @updated="refreshCurrent"
     />
   </div>
@@ -537,12 +549,6 @@ onMounted(async () => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.visibility-hint {
-  margin: 12px 0 0;
-  color: var(--muted);
-  font-size: 11px;
 }
 
 .feedback-list {

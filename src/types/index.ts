@@ -143,9 +143,25 @@ export interface FeedbackListItem {
   /** 仅超管或提交者本人可见，其余情况为空串 */
   contact: string
   status: FeedbackStatus
+  /** 官方最终答复（管理员维护），与讨论区回复是两套内容 */
   reply: string
   repliedAt: string | null
+  /** 讨论区回复条数 */
+  replyCount: number
   userId: number
+  user: FeedbackUser | null
+  createdAt: string
+}
+
+/** 反馈讨论区的一条回复 */
+export interface FeedbackReply {
+  id: number
+  feedbackId: number
+  /** 父回复 ID，0 表示直接回复反馈 */
+  parentId: number
+  content: string
+  /** 写入时是否为超管回复，用于展示「官方」标识 */
+  isAdmin: boolean
   user: FeedbackUser | null
   createdAt: string
 }

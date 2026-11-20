@@ -1,6 +1,7 @@
 import { http } from './request'
 import type {
   FeedbackListItem,
+  FeedbackReply,
   FeedbackStatus,
   FeedbackSummary,
   FeedbackType,
@@ -40,7 +41,7 @@ export function createFeedback(data: {
 
 /**
  * 反馈列表
- * 超管返回全部；普通用户仅返回非 Bug 反馈 + 自己提交的反馈
+ * 所有登录用户都能看到全部反馈（含他人 Bug）；pageUrl / contact 只有超管与提交者本人能拿到
  */
 export function getFeedbackList(params: FeedbackListQuery = {}) {
   return http.post<PageData<FeedbackListItem>>('/pri/feedback/list', {
@@ -57,7 +58,33 @@ export function getMyFeedbackList(page = 1, pageSize = 10) {
   return http.post<PageData<FeedbackListItem>>('/pri/feedback/my_list', { page, pageSize })
 }
 
-/** 处理反馈（仅超管）：改状态 / 回复，status 与 reply 至少传一个 */
+/**
+ * 参与讨论：在任意反馈下回复（所有登录用户）
+ * parentId 非 0 表示回复某条已有回复，必须与 feedbackId 同属一条反馈
+ * 后端限制：同一用户 1 分钟 10 条、24 小时 100 条
+ */
+export function createFeedbackReply(data: {
+  feedbackId: number
+  parentId?: number
+  content: string
+}) {
+  return http.post<FeedbackReply>('/pri/feedback/reply_create', {
+    feedbackId: data.feedbackId,
+    parentId: data.parentId ?? 0,
+    content: data.content,
+  })
+}
+
+/** 反馈讨论区回复列表（按时间正序分页） */
+export function getFeedbackReplies(feedbackId: number, page = 1, pageSize = 20) {
+  return http.post<PageData<FeedbackReply>>('/pri/feedback/reply_list', {
+    feedbackId,
+    page,
+    pageSize,
+  })
+}
+
+/** 处理反馈（仅超管）：改状态 / 填官方答复，status 与 reply 至少传一个 */
 export function updateFeedback(data: { id: number; status?: FeedbackStatus; reply?: string }) {
   return http.put<string>('/pri/feedback/update', data)
 }

@@ -17,6 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   handle: [feedback: FeedbackListItem]
   remove: [feedback: FeedbackListItem]
+  discuss: [feedback: FeedbackListItem]
 }>()
 
 const expanded = ref(false)
@@ -24,6 +25,7 @@ const brokenUrls = ref<string[]>([])
 
 const images = computed(() => props.feedback.images ?? [])
 const needExpand = computed(() => props.feedback.content.length > 140)
+const replyCount = computed(() => props.feedback.replyCount ?? 0)
 
 function typeLabel(type: FeedbackType) {
   return FEEDBACK_TYPE_LABELS[type] ?? type
@@ -80,7 +82,7 @@ function markBroken(url: string) {
     </div>
 
     <div v-if="feedback.reply" class="reply-block">
-      <span class="reply-label">官方回复</span>
+      <span class="reply-label">官方答复</span>
       <p class="reply-text">{{ feedback.reply }}</p>
       <time v-if="feedback.repliedAt" class="reply-time mono">
         {{ formatDate(feedback.repliedAt, true) }}
@@ -92,11 +94,19 @@ function markBroken(url: string) {
       <p v-if="showContact && feedback.contact">联系方式：{{ feedback.contact }}</p>
     </div>
 
-    <div v-if="manageable" class="card-actions">
-      <button class="row-action" type="button" @click="emit('handle', feedback)">
-        处理 / 回复
+    <div class="card-actions">
+      <button class="row-action discuss" type="button" @click="emit('discuss', feedback)">
+        {{ replyCount ? `参与讨论 · ${replyCount}` : '参与讨论' }}
       </button>
-      <button class="row-action danger" type="button" @click="emit('remove', feedback)">
+      <button v-if="manageable" class="row-action" type="button" @click="emit('handle', feedback)">
+        处理 / 答复
+      </button>
+      <button
+        v-if="manageable"
+        class="row-action danger"
+        type="button"
+        @click="emit('remove', feedback)"
+      >
         删除
       </button>
     </div>
@@ -322,6 +332,18 @@ function markBroken(url: string) {
 
 .row-action:hover {
   border-color: var(--ink);
+}
+
+.row-action.discuss {
+  border-color: var(--coral);
+  background: var(--coral-tint);
+  color: var(--coral-dark);
+}
+
+.row-action.discuss:hover {
+  background: var(--coral);
+  border-color: var(--coral);
+  color: #fff;
 }
 
 .row-action.danger {

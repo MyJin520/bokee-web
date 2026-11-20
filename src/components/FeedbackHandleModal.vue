@@ -21,7 +21,7 @@ const STATUS_OPTIONS = FEEDBACK_STATUS_ORDER.map((value) => ({
   hint: FEEDBACK_STATUS_HINTS[value],
 }))
 
-/** 常用回复模板，减少重复输入 */
+/** 常用答复模板，减少重复输入 */
 const REPLY_TEMPLATES = [
   '已收到，正在排查，有结论会同步给你。',
   '已修复并上线，感谢你的反馈。',
@@ -107,14 +107,14 @@ async function submit() {
             </button>
           </div>
 
-          <label class="field-label" for="feedback-reply">回复用户</label>
+          <label class="field-label" for="feedback-reply">官方答复</label>
           <textarea
             id="feedback-reply"
             v-model="reply"
             class="field-area"
             rows="4"
             maxlength="2000"
-            placeholder="写下处理结论，提交者会在「我的反馈」里看到"
+            placeholder="写下最终结论，会作为「官方答复」长期置顶在反馈卡片上；日常讨论请在反馈卡片里点「参与讨论」"
           ></textarea>
           <p class="counter">{{ reply.length }} / 2000</p>
 
@@ -132,7 +132,9 @@ async function submit() {
         </div>
 
         <footer class="panel-foot">
-          <p class="foot-hint">回复会记录回复人与时间，提交者可见。</p>
+          <p class="foot-hint">
+            官方答复会记录答复人与时间，所有登录用户可见；已有答复再次保存会被覆盖。
+          </p>
           <div class="foot-actions">
             <button class="btn btn-outline btn-sm" type="button" @click="onClose">取消</button>
             <button
