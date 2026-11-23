@@ -9,14 +9,13 @@ export interface IMUserBrief {
 
 /**
  * 会话列表里的最后一条消息摘要
- * 注意：后端字段为 `createAt`（不是 createdAt），与消息列表项的 `createdAt` 不同
  */
 export interface IMMessageBrief {
   id: number
   senderId: number
   msgType: string
   content: string
-  createAt: string
+  createdAt: string
 }
 
 /** 会话状态：stranger 陌生（发起方受额度限制） / unlocked 已解锁 */

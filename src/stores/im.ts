@@ -236,7 +236,7 @@ export const useImStore = defineStore('im', () => {
       senderId: result.senderId,
       msgType: result.msgType,
       content: result.content,
-      createAt: result.createdAt,
+      createdAt: result.createdAt,
     }
     conversation.lastMessageAt = result.createdAt
     sortConversations()
@@ -293,7 +293,7 @@ export const useImStore = defineStore('im', () => {
         senderId: payload.senderId,
         msgType: payload.msgType,
         content: payload.content,
-        createAt: payload.createdAt,
+        createdAt: payload.createdAt,
       }
       conversation.lastMessageAt = payload.createdAt
       if (payload.status === 'unlocked') applyUnlocked(conversation)
