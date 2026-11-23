@@ -3,12 +3,14 @@ import { defineStore } from 'pinia'
 import {
   createConversation as createConversationApi,
   getConversations,
+  getImConfig,
   getUnread,
   getWsTicket,
   markMessagesRead,
   syncMessages,
 } from '@/api/im'
 import { useUserStore } from '@/stores/user'
+import { IM_DEFAULT_MAX_CONTENT_LENGTH } from '@/types/im'
 import type {
   IMConversation,
   IMNewMessagePayload,
@@ -57,6 +59,8 @@ export const useImStore = defineStore('im', () => {
   const lastSeq = ref(0)
   /** 对方在各会话中的已读游标，用于展示「已读」 */
   const peerReadCursors = ref<Record<number, number>>({})
+  /** 单条消息正文长度上限，登录后由后端配置下发，前端不硬编码 */
+  const maxContentLength = ref(IM_DEFAULT_MAX_CONTENT_LENGTH)
 
   const listeners = new Set<EventListener>()
   const recentIds = new Set<number>()
@@ -188,6 +192,17 @@ export const useImStore = defineStore('im', () => {
     conversations.value.forEach((conversation) => {
       conversation.unread = map.get(conversation.id) ?? 0
     })
+  }
+
+  /** 拉取私信规则配置；失败保留兜底值，不阻塞聊天 */
+  async function loadConfig() {
+    try {
+      const res = await getImConfig()
+      const limit = Number(res?.maxContentLength)
+      if (Number.isFinite(limit) && limit > 0) maxContentLength.value = limit
+    } catch {
+      // 配置拉取失败时沿用兜底值，输入长度仍由后端最终校验
+    }
   }
 
   function scheduleConversationRefresh() {
@@ -455,6 +470,7 @@ export const useImStore = defineStore('im', () => {
     prepare()
 
     startPromise = (async () => {
+      await loadConfig()
       await loadUnread().catch(() => {})
       await refreshFirstPage().catch(() => {})
       await connect()
@@ -492,6 +508,7 @@ export const useImStore = defineStore('im', () => {
     unreadTotal.value = 0
     activeConversationId.value = null
     peerReadCursors.value = {}
+    maxContentLength.value = IM_DEFAULT_MAX_CONTENT_LENGTH
     lastSeq.value = 0
     loadedPage = 0
     recentIds.clear()
@@ -505,6 +522,7 @@ export const useImStore = defineStore('im', () => {
     activeConversationId,
     lastSeq,
     peerReadCursors,
+    maxContentLength,
     myId,
     subscribe,
     start,

@@ -1,6 +1,7 @@
 import { http } from './request'
 import type { PageData } from '@/types'
 import type {
+  IMConfig,
   IMConversation,
   IMMessageList,
   IMSendResult,
@@ -71,4 +72,9 @@ export function syncMessages(afterId = 0, limit = 200) {
 /** 申请 WebSocket 一次性连接票据（30 秒内有效） */
 export function getWsTicket() {
   return http.post<IMWsTicket>('/pri/message/ws_ticket')
+}
+
+/** 私信规则配置（长度上限等以后端配置为准） */
+export function getImConfig() {
+  return http.get<IMConfig>('/pri/message/config')
 }

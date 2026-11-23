@@ -12,7 +12,7 @@ import type {
   IMNewMessagePayload,
   IMWsEvent,
 } from '@/types/im'
-import { IM_CODE_QUOTA_EXCEEDED, IM_MAX_CONTENT_LENGTH } from '@/types/im'
+import { IM_CODE_QUOTA_EXCEEDED } from '@/types/im'
 import { formatMessageTime, formatDayLabel, isDifferentDay } from '@/utils/im'
 import { initialOf } from '@/utils/format'
 import ImConversationItem from '@/components/ImConversationItem.vue'
@@ -347,8 +347,8 @@ async function send() {
     ui.toastError(lockHint.value)
     return
   }
-  if ([...content].length > IM_MAX_CONTENT_LENGTH) {
-    ui.toastError(`消息内容不能超过 ${IM_MAX_CONTENT_LENGTH} 个字符`)
+  if ([...content].length > im.maxContentLength) {
+    ui.toastError(`消息内容不能超过 ${im.maxContentLength} 个字符`)
     return
   }
 
@@ -662,14 +662,14 @@ watch(
                 v-model="draft"
                 class="composer-input"
                 rows="3"
-                :maxlength="IM_MAX_CONTENT_LENGTH"
+                :maxlength="im.maxContentLength"
                 :disabled="!activeConv.canSend"
                 placeholder="说点什么…（Enter 发送，Shift + Enter 换行）"
                 @keydown="onKeydown"
               ></textarea>
               <div class="composer-actions">
-                <span class="composer-count" :class="{ over: draftLength > IM_MAX_CONTENT_LENGTH }">
-                  {{ draftLength }} / {{ IM_MAX_CONTENT_LENGTH }}
+                <span class="composer-count" :class="{ over: draftLength > im.maxContentLength }">
+                  {{ draftLength }} / {{ im.maxContentLength }}
                 </span>
                 <button
                   class="btn btn-coral btn-sm"

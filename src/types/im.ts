@@ -119,5 +119,10 @@ export interface IMWsEvent {
 /** 私信额度耗尽业务码（HTTP 仍为 200，错误码在响应体 code 中） */
 export const IM_CODE_QUOTA_EXCEEDED = 4003
 
-/** 单条消息正文长度上限（与后端校验保持一致） */
-export const IM_MAX_CONTENT_LENGTH = 2000
+/** 私信规则配置（由 /pri/message/config 下发，前端不再硬编码限制值） */
+export interface IMConfig {
+  maxContentLength: number
+}
+
+/** 配置拉取失败时的兜底长度上限，正常以 IMConfig.maxContentLength 为准 */
+export const IM_DEFAULT_MAX_CONTENT_LENGTH = 2000
