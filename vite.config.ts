@@ -28,6 +28,12 @@ export default defineConfig(({ command, mode }) => {
           target: apiTarget,
           changeOrigin: true,
         },
+        // 私信 WebSocket：握手用一次性 ticket，注意开启 ws 代理
+        '/ws': {
+          target: apiTarget,
+          changeOrigin: true,
+          ws: true,
+        },
       },
     },
   }

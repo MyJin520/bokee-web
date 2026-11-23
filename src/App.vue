@@ -1,26 +1,30 @@
 <script setup lang="ts">
 import { onMounted, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
+import { useImStore } from '@/stores/im'
 import { useReactions } from '@/composables/useReactions'
 import AppHeader from '@/components/AppHeader.vue'
 import AppToast from '@/components/AppToast.vue'
 import AppConfirm from '@/components/AppConfirm.vue'
 
 const userStore = useUserStore()
+const imStore = useImStore()
 const { ensureReactions, resetReactions } = useReactions()
 
 onMounted(() => {
   userStore.restoreSession()
 })
 
-// 登录态变化时同步点赞/收藏/关注状态：登录后加载，登出后清空
+// 登录态变化时同步点赞/收藏/关注状态与私信连接：登录后加载，登出后清空
 watch(
   () => userStore.userInfo?.id,
   (id) => {
     if (id) {
       ensureReactions().catch(() => {})
+      imStore.start().catch(() => {})
     } else {
       resetReactions()
+      imStore.stop()
     }
   },
 )

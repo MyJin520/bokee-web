@@ -3,12 +3,14 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useUiStore } from '@/stores/ui'
+import { useImStore } from '@/stores/im'
 import FeedbackModal from '@/components/FeedbackModal.vue'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const ui = useUiStore()
+const imStore = useImStore()
 const menuOpen = ref(false)
 /** 反馈弹窗开关：头部「反馈」按钮直接唤起提交表单 */
 const feedbackOpen = ref(false)
@@ -17,6 +19,10 @@ const displayName = computed(
   () => userStore.userInfo?.name || localStorage.getItem('userName') || '我的账户',
 )
 const avatarUrl = computed(() => userStore.userInfo?.avatar || '')
+/** 未读私信角标：超过 99 显示 99+ */
+const unreadBadge = computed(() =>
+  imStore.unreadTotal > 99 ? '99+' : String(imStore.unreadTotal),
+)
 
 interface NavItem {
   label: string
@@ -124,6 +130,16 @@ async function logout() {
         </button>
         <template v-if="userStore.isLoggedIn">
           <button
+            class="header-icon im-entry"
+            type="button"
+            aria-label="私信"
+            title="私信"
+            @click="go('/messages')"
+          >
+            ✉
+            <span v-if="imStore.unreadTotal > 0" class="im-badge">{{ unreadBadge }}</span>
+          </button>
+          <button
             class="header-icon feedback-entry"
             type="button"
             aria-label="提交反馈"
@@ -171,6 +187,10 @@ async function logout() {
         <button type="button" @click="go('/my-articles')">我的文章</button>
         <button type="button" @click="go('/my/bookmarks')">我的收藏</button>
         <button type="button" @click="go('/my/follows')">我的关注</button>
+        <button type="button" @click="go('/messages')">
+          私信
+          <span v-if="imStore.unreadTotal > 0" class="nav-badge">{{ unreadBadge }}</span>
+        </button>
         <button type="button" @click="go('/feedback')">反馈中心</button>
         <button type="button" @click="go('/profile')">个人中心</button>
         <button v-if="userStore.isAdmin" type="button" @click="go('/users')">用户管理</button>
@@ -238,6 +258,9 @@ async function logout() {
 
 .nav-link {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 10px 13px;
   color: var(--muted);
   background: transparent;
@@ -258,6 +281,43 @@ async function logout() {
   bottom: 4px;
   height: 2px;
   background: var(--coral);
+}
+
+.nav-badge {
+  min-width: 16px;
+  padding: 1px 4px;
+  border-radius: 8px;
+  background: var(--coral);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.im-entry {
+  position: relative;
+  font-size: 15px;
+}
+
+.im-entry:hover {
+  border-color: var(--coral);
+  color: var(--coral-dark);
+}
+
+.im-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--coral);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
 }
 
 .header-actions {
@@ -383,6 +443,10 @@ async function logout() {
 }
 
 .mobile-nav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   padding: 10px 4px;
   background: transparent;
   color: var(--muted);

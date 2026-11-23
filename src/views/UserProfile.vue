@@ -95,6 +95,12 @@ function changePage(next: number) {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
+/** 从作者主页发起私信：私信页会创建（或复用一个）会话 */
+function startChat() {
+  if (!user.value) return
+  router.push({ name: 'messages', query: { target: String(user.value.id) } })
+}
+
 onMounted(async () => {
   // 页面直接刷新进入时，等待根组件恢复登录态后再加载
   if (!userStore.userInfo && userStore.isLoggedIn) await userStore.restoreSession()
@@ -148,6 +154,9 @@ onBeforeRouteUpdate((to) => {
               @click="onFollow"
             >
               {{ followed ? '✓ 已关注' : '＋ 关注 TA' }}
+            </button>
+            <button v-if="!isSelf" class="btn btn-outline btn-sm" type="button" @click="startChat">
+              ✉ 私信 TA
             </button>
             <router-link class="btn btn-outline btn-sm" :to="{ name: 'articles' }">浏览全部文章</router-link>
           </div>
