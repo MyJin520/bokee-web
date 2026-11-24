@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getConversationInfo, getMessages, sendMessage } from '@/api/im'
+import { getConversationInfo, getMessages, recallMessage, sendMessage } from '@/api/im'
+import { uploadFiles } from '@/api/file'
 import { ApiError } from '@/api/request'
 import { useImStore } from '@/stores/im'
 import { useUserStore } from '@/stores/user'
@@ -10,10 +11,18 @@ import type {
   IMConversation,
   IMMessage,
   IMNewMessagePayload,
+  IMRecallPayload,
   IMWsEvent,
 } from '@/types/im'
 import { IM_CODE_QUOTA_EXCEEDED } from '@/types/im'
-import { formatMessageTime, formatDayLabel, isDifferentDay } from '@/utils/im'
+import {
+  canRecallMessage,
+  formatMessageTime,
+  formatDayLabel,
+  isDifferentDay,
+  messageBriefPreview,
+  splitLinkSegments,
+} from '@/utils/im'
 import { initialOf } from '@/utils/format'
 import ImConversationItem from '@/components/ImConversationItem.vue'
 
@@ -30,6 +39,8 @@ interface ChatMessage extends IMMessage {
 
 const PAGE_SIZE = 30
 const NEAR_BOTTOM = 80
+/** 允许发送的图片 MIME 类型 */
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 
 const activeId = ref<number | null>(null)
 const messages = ref<ChatMessage[]>([])
@@ -40,19 +51,34 @@ const loadingOlder = ref(false)
 const chatError = ref('')
 const draft = ref('')
 const sending = ref(false)
+const sendingImage = ref(false)
 const creating = ref(false)
 const loadingList = ref(false)
 const listError = ref('')
 const scrollEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
+const imageInputEl = ref<HTMLInputElement | null>(null)
 const atBottom = ref(true)
 const showJump = ref(false)
+/** 当前被引用的待回复消息 */
+const replyingTo = ref<ChatMessage | null>(null)
+/** 当前悬停操作条的消息标识（待发送气泡用 clientMsgId） */
+const hoveredKey = ref<string | null>(null)
+/** 加载失败的图片地址，用于渲染兜底占位 */
+const brokenImages = ref<Set<string>>(new Set())
+
+function markImageBroken(url: string) {
+  if (!url || brokenImages.value.has(url)) return
+  brokenImages.value = new Set(brokenImages.value).add(url)
+}
 
 /** 已提交给后端的最大已读消息 ID，避免重复请求 */
 let lastMarkedId = 0
 let unsubscribe: (() => void) | null = null
 
 const myId = computed(() => userStore.userInfo?.id ?? 0)
+const myName = computed(() => userStore.userInfo?.name ?? '我')
+const myAvatar = computed(() => userStore.userInfo?.avatar ?? '')
 const activeConv = computed(
   () => im.conversations.find((item) => item.id === activeId.value) ?? null,
 )
@@ -73,6 +99,56 @@ const lockHint = computed(() => {
   if (quota > 0) return `陌生会话 · 对方回复前还可发送 ${quota} 条`
   return '对方回复前最多发送 3 条，请等待对方回复后再继续'
 })
+
+/** 引用块显示的发送者昵称：引用我方消息显示我方昵称，引用对方显示对方昵称 */
+function replySenderName(msg: ChatMessage): string {
+  return msg.replyToSenderId === myId.value
+    ? myName.value
+    : activeConv.value?.peer.name ?? '对方'
+}
+
+/** 文本消息按链接拆分为渲染片段 */
+function linkSegments(msg: ChatMessage) {
+  return splitLinkSegments(msg.content)
+}
+
+/** 消息是否可撤回：本人发送、未落库失败、未撤回且仍在时间窗口内 */
+function canRecall(msg: ChatMessage): boolean {
+  return (
+    msg.id > 0 &&
+    msg.senderId === myId.value &&
+    !msg.recalled &&
+    canRecallMessage(msg.createdAt, im.recallWindowMin)
+  )
+}
+
+/** 消息行的唯一标识，用于悬停操作条高亮 */
+function messageKey(msg: ChatMessage): string {
+  return msg.id > 0 ? `id:${msg.id}` : `client:${msg.clientMsgId}`
+}
+
+/** 原消息自身摘要（回复栏预览待引用的消息）：图片显示占位 */
+function quotePreview(msg: ChatMessage): string {
+  if (msg.msgType === 'image') return '[图片]'
+  return msg.content || ''
+}
+
+/** 已发送消息的引用快照摘要：读取被引用快照字段，图片显示占位，不取本条正文 */
+function replyPreview(msg: ChatMessage): string {
+  if (msg.replyToMsgType === 'image') return '[图片]'
+  return msg.replyToContent || ''
+}
+
+/**
+ * 引用块状态：被引用消息已撤回时不再展示旧快照。
+ * 优先以后端持久化标记为准；同一页面内原消息刚撤回、标记尚未回写时，按本地列表兜底判断。
+ */
+function quoteState(msg: ChatMessage): 'normal' | 'recalled' {
+  if (msg.replyRecalled) return 'recalled'
+  const quoted = messages.value.find((item) => item.id === msg.replyToId)
+  if (quoted?.recalled) return 'recalled'
+  return 'normal'
+}
 
 /* ============ 滚动 ============ */
 
@@ -248,6 +324,7 @@ async function selectConversation(conv: IMConversation | null | undefined, syncR
   }
   activeId.value = conv.id
   im.setActiveConversation(conv.id)
+  replyingTo.value = null
   if (syncRoute) await syncQuery(conv.id)
   await loadLatest()
   await markReadNow()
@@ -299,6 +376,7 @@ function closeChat() {
   activeId.value = null
   im.setActiveConversation(null)
   messages.value = []
+  replyingTo.value = null
   lastMarkedId = 0
   void clearQuery()
 }
@@ -338,6 +416,20 @@ function createClientMsgId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+/** 组装引用快照（乐观气泡使用；服务端返回后以库中快照为准） */
+function quoteSnapshot(): Pick<ChatMessage, 'replyToId' | 'replyToSenderId' | 'replyToMsgType' | 'replyToContent'> {
+  const quoted = replyingTo.value
+  if (!quoted) {
+    return { replyToId: 0, replyToSenderId: 0, replyToMsgType: '', replyToContent: '' }
+  }
+  return {
+    replyToId: quoted.id,
+    replyToSenderId: quoted.senderId,
+    replyToMsgType: quoted.msgType,
+    replyToContent: messageBriefPreview(quoted),
+  }
+}
+
 async function send() {
   const conv = activeConv.value
   if (!conv) return
@@ -353,6 +445,7 @@ async function send() {
   }
 
   const clientMsgId = createClientMsgId()
+  const quote = quoteSnapshot()
   const optimistic: ChatMessage = {
     id: 0,
     conversationId: conv.id,
@@ -361,16 +454,25 @@ async function send() {
     msgType: 'text',
     content,
     clientMsgId,
+    ...quote,
+    replyRecalled: false,
+    recalled: false,
     createdAt: new Date().toISOString(),
     pending: true,
   }
   messages.value.push(optimistic)
   draft.value = ''
+  replyingTo.value = null
   sending.value = true
   scrollToBottom()
 
   try {
-    const result = await sendMessage({ targetId: conv.peer.id, content, clientMsgId })
+    const result = await sendMessage({
+      targetId: conv.peer.id,
+      content,
+      clientMsgId,
+      replyToId: quote.replyToId,
+    })
     appendMessage(result)
     im.applySendResult(result)
     if (result.unlocked) ui.toast('会话已解锁，可以自由沟通')
@@ -398,9 +500,147 @@ function onKeydown(event: KeyboardEvent) {
   void send()
 }
 
+/* ============ 引用 ============ */
+
+function startReply(msg: ChatMessage) {
+  if (msg.recalled || msg.id === 0) return
+  replyingTo.value = msg
+  inputEl.value?.focus()
+}
+
+function cancelReply() {
+  replyingTo.value = null
+}
+
+/** 点击引用块定位到被引用消息 */
+function locateReply(msg: ChatMessage) {
+  if (!msg.replyToId) return
+  const el = scrollEl.value?.querySelector(`[data-message-id="${msg.replyToId}"]`)
+  el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+/* ============ 图片 ============ */
+
+function pickImage() {
+  imageInputEl.value?.click()
+}
+
+async function onImagePicked(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  const conv = activeConv.value
+  if (!file || !conv) return
+  if (!IMAGE_TYPES.includes(file.type)) {
+    ui.toastError('仅支持发送 JPG / PNG / GIF / WebP 图片')
+    return
+  }
+  if (file.size > 32 << 20) {
+    ui.toastError('图片大小不能超过 32MB')
+    return
+  }
+  if (!conv.canSend) {
+    ui.toastError(lockHint.value)
+    return
+  }
+
+  sendingImage.value = true
+  try {
+    const [uploaded] = await uploadFiles([file])
+    if (!uploaded?.url) {
+      ui.toastError('图片上传失败，请稍后重试')
+      return
+    }
+    await sendImageMessage(conv, uploaded.url)
+  } catch (error: unknown) {
+    ui.toastError(error instanceof Error ? error.message : '图片发送失败，请稍后重试')
+  } finally {
+    sendingImage.value = false
+  }
+}
+
+async function sendImageMessage(conv: IMConversation, url: string) {
+  const clientMsgId = createClientMsgId()
+  const quote = quoteSnapshot()
+  const optimistic: ChatMessage = {
+    id: 0,
+    conversationId: conv.id,
+    senderId: myId.value,
+    receiverId: conv.peer.id,
+    msgType: 'image',
+    content: url,
+    clientMsgId,
+    ...quote,
+    replyRecalled: false,
+    recalled: false,
+    createdAt: new Date().toISOString(),
+    pending: true,
+  }
+  messages.value.push(optimistic)
+  replyingTo.value = null
+  scrollToBottom()
+
+  try {
+    const result = await sendMessage({
+      targetId: conv.peer.id,
+      content: url,
+      clientMsgId,
+      msgType: 'image',
+      replyToId: quote.replyToId,
+    })
+    appendMessage(result)
+    im.applySendResult(result)
+    scrollToBottom()
+  } catch (error: unknown) {
+    messages.value = messages.value.filter(
+      (item) => !(item.id === 0 && item.clientMsgId === clientMsgId),
+    )
+    ui.toastError(error instanceof Error ? error.message : '图片发送失败，请稍后重试')
+  }
+}
+
+/* ============ 撤回 ============ */
+
+/** 本地把消息标记为撤回（WS 事件与接口成功回调共用） */
+function applyRecalled(messageId: number) {
+  const target = messages.value.find((item) => item.id === messageId)
+  if (!target) return
+  target.recalled = true
+  target.content = ''
+  target.replyToId = 0
+  target.replyToSenderId = 0
+  target.replyToMsgType = ''
+  target.replyToContent = ''
+  if (replyingTo.value?.id === messageId) replyingTo.value = null
+  // 本地实时兜底：引用了该消息的其他消息同步标记引用快照失效
+  messages.value.forEach((item) => {
+    if (item.replyToId === messageId && !item.recalled) {
+      item.replyRecalled = true
+      item.replyToContent = ''
+      item.replyToMsgType = ''
+    }
+  })
+}
+
+async function onRecall(msg: ChatMessage) {
+  if (!canRecall(msg)) return
+  try {
+    await recallMessage(msg.id)
+    applyRecalled(msg.id)
+  } catch (error: unknown) {
+    ui.toastError(error instanceof Error ? error.message : '消息撤回失败，请稍后重试')
+  }
+}
+
 /* ============ 实时事件 ============ */
 
 function onEvent(event: IMWsEvent) {
+  if (event.type === 'message.recalled') {
+    const payload = event.data as unknown as IMRecallPayload
+    if (!activeId.value || payload.conversationId !== activeId.value) return
+    applyRecalled(payload.messageId)
+    return
+  }
   if (event.type !== 'message.new') return
   const payload = event.data as IMNewMessagePayload
   if (!activeId.value || payload.conversationId !== activeId.value) return
@@ -559,7 +799,7 @@ watch(
           <span class="chat-empty-mark">✉</span>
           <p class="chat-empty-title">选一段对话，或者去作者主页发起私信</p>
           <p class="chat-empty-hint">
-            消息按纯文本传输；陌生会话在对方回复前最多发送 3 条，互相关注则直接解锁。
+            支持文本、图片与引用回复；陌生会话在对方回复前最多发送 3 条，互相关注则直接解锁。
           </p>
         </div>
 
@@ -615,7 +855,20 @@ watch(
                 <div v-if="showDay(index)" class="day-divider">
                   <span>{{ dayLabel(index) }}</span>
                 </div>
-                <div :class="['msg-row', { mine: msg.senderId === myId }]">
+
+                <div v-if="msg.recalled" class="recalled-row">
+                  <span class="recalled-note">
+                    {{ msg.senderId === myId ? '你撤回了一条消息' : '对方撤回了一条消息' }}
+                  </span>
+                </div>
+
+                <div
+                  v-else
+                  :class="['msg-row', { mine: msg.senderId === myId }]"
+                  :data-message-id="msg.id || undefined"
+                  @mouseenter="hoveredKey = messageKey(msg)"
+                  @mouseleave="hoveredKey = null"
+                >
                   <span v-if="msg.senderId !== myId" class="msg-avatar">
                     <img
                       v-if="activeConv.peer.avatar"
@@ -625,7 +878,53 @@ watch(
                     <template v-else>{{ initialOf(activeConv.peer.name) }}</template>
                   </span>
                   <div class="msg-body">
-                    <p class="bubble">{{ msg.content }}</p>
+                    <div class="bubble-card">
+                      <button
+                        v-if="msg.replyToId"
+                        type="button"
+                        class="bubble-quote"
+                        :class="{ 'quote-disabled': quoteState(msg) === 'recalled' }"
+                        @click="quoteState(msg) === 'normal' && locateReply(msg)"
+                      >
+                        <span class="quote-name">{{ replySenderName(msg) }}:</span>
+                        <span v-if="quoteState(msg) === 'recalled'" class="quote-text quote-recalled">
+                          引用内容已撤回
+                        </span>
+                        <span v-else class="quote-text">{{ replyPreview(msg) }}</span>
+                      </button>
+
+                      <a
+                        v-if="msg.msgType === 'image' && !brokenImages.has(msg.content)"
+                        class="bubble-image"
+                        :href="msg.content"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <img
+                          :src="msg.content"
+                          alt="图片消息"
+                          loading="lazy"
+                          @error="markImageBroken(msg.content)"
+                        />
+                      </a>
+                      <span v-else-if="msg.msgType === 'image'" class="bubble-image-broken">
+                        图片无法加载
+                      </span>
+                      <p v-else class="bubble-content">
+                        <template v-for="(seg, segIndex) in linkSegments(msg)" :key="segIndex">
+                          <a
+                            v-if="seg.kind === 'link'"
+                            class="msg-link"
+                            :href="seg.url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            >{{ seg.text }}</a
+                          >
+                          <span v-else>{{ seg.text }}</span>
+                        </template>
+                      </p>
+                    </div>
+
                     <p class="msg-meta">
                       <span>{{ formatMessageTime(msg.createdAt) }}</span>
                       <span v-if="msg.pending" class="meta-note">发送中…</span>
@@ -638,6 +937,28 @@ watch(
                         已读
                       </span>
                     </p>
+                  </div>
+                  <span v-if="msg.senderId === myId" class="msg-avatar mine-avatar">
+                    <img v-if="myAvatar" :src="myAvatar" :alt="myName" />
+                    <template v-else>{{ initialOf(myName) }}</template>
+                  </span>
+                  <div class="msg-actions" :class="{ show: hoveredKey === messageKey(msg) }">
+                    <button
+                      v-if="msg.id > 0 && !msg.recalled"
+                      type="button"
+                      class="action-btn"
+                      @click="startReply(msg)"
+                    >
+                      引用
+                    </button>
+                    <button
+                      v-if="canRecall(msg)"
+                      type="button"
+                      class="action-btn"
+                      @click="onRecall(msg)"
+                    >
+                      撤回
+                    </button>
                   </div>
                 </div>
               </template>
@@ -656,7 +977,36 @@ watch(
             <div v-if="!activeConv.canSend" class="composer-lock">
               {{ lockHint }}
             </div>
+
+            <div v-if="replyingTo" class="reply-bar">
+              <div class="reply-bar-main">
+                <span class="reply-bar-label">
+                  回复 {{ replyingTo.senderId === myId ? myName : activeConv.peer.name }}
+                </span>
+                <span class="reply-bar-text">{{ quotePreview(replyingTo) }}</span>
+              </div>
+              <button type="button" class="reply-bar-close" aria-label="取消引用" @click="cancelReply">
+                ×
+              </button>
+            </div>
+
             <div class="composer-box">
+              <input
+                ref="imageInputEl"
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                hidden
+                @change="onImagePicked"
+              />
+              <button
+                class="icon-btn"
+                type="button"
+                title="发送图片"
+                :disabled="!activeConv.canSend || sendingImage || sending"
+                @click="pickImage"
+              >
+                {{ sendingImage ? '…' : '🖼' }}
+              </button>
               <textarea
                 ref="inputEl"
                 v-model="draft"
@@ -1037,6 +1387,7 @@ watch(
 }
 
 .msg-row {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -1048,16 +1399,16 @@ watch(
 }
 
 .msg-avatar {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
   border-radius: 50%;
   overflow: hidden;
-  background: var(--mint);
-  color: var(--ink);
-  font-size: 11px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -1078,22 +1429,84 @@ watch(
   align-items: flex-end;
 }
 
-.bubble {
-  margin: 0;
-  padding: 9px 12px;
+/* ============ 气泡容器（引用区 + 正文同属一个气泡） ============ */
+
+.bubble-card {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
   border: 1px solid var(--line);
-  background: #fff;
+  border-radius: 0;
+  background: var(--surface);
   color: var(--ink);
   font-size: 13px;
+  overflow: hidden;
+}
+
+.msg-row.mine .bubble-card {
+  border-color: rgba(231, 111, 81, 0.35);
+  background: var(--coral-tint);
+  color: var(--coral-dark);
+}
+
+.bubble-content {
+  margin: 0;
+  padding: 9px 12px;
   line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.msg-row.mine .bubble {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: #fff;
+/* ============ 内嵌引用区 ============ */
+
+.bubble-quote {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  max-width: 100%;
+  margin: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-left: 3px solid var(--muted);
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 0.6em;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+
+.msg-row.mine .bubble-quote {
+  border-left-color: var(--coral);
+  border-bottom-color: rgba(231, 111, 81, 0.25);
+  background: rgba(255, 255, 255, 0.45);
+  color: var(--muted);
+}
+
+.bubble-quote .quote-name {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.bubble-quote .quote-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-disabled {
+  cursor: default;
+}
+
+.quote-recalled {
+  font-style: italic;
+}
+
+.msg-row.mine .quote-recalled {
+  color: var(--muted);
 }
 
 .msg-meta {
@@ -1107,6 +1520,153 @@ watch(
 
 .meta-note {
   color: var(--coral-dark);
+}
+
+/* ============ 撤回提示 ============ */
+
+.recalled-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.recalled-note {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+/* ============ 图片消息 ============ */
+
+.bubble-image {
+  display: inline-block;
+  max-width: 100%;
+  padding: 4px;
+}
+
+.bubble-image img {
+  display: block;
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+.bubble-image-broken {
+  display: inline-block;
+  padding: 18px 22px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.msg-link {
+  color: var(--coral-dark);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.msg-row.mine .msg-link {
+  color: var(--coral-dark);
+  text-decoration-color: rgba(201, 88, 60, 0.5);
+}
+
+/* ============ 消息操作条 ============ */
+
+.msg-actions {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.msg-row:hover .msg-actions {
+  display: flex;
+}
+
+.msg-row.mine .msg-actions {
+  order: 0;
+}
+
+.msg-row.mine .msg-body {
+  order: 1;
+}
+
+.msg-row.mine .mine-avatar {
+  order: 2;
+}
+
+.action-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.action-btn:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+/* ============ 输入区扩展 ============ */
+
+.reply-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.reply-bar-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reply-bar-label {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.reply-bar-text {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reply-bar-close {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.icon-btn {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .jump-btn {
@@ -1155,7 +1715,7 @@ watch(
   max-height: 150px;
   padding: 10px 12px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   font-size: 13px;
   line-height: 1.6;

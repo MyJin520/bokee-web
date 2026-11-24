@@ -10,11 +10,12 @@ import {
   syncMessages,
 } from '@/api/im'
 import { useUserStore } from '@/stores/user'
-import { IM_DEFAULT_MAX_CONTENT_LENGTH } from '@/types/im'
+import { IM_DEFAULT_MAX_CONTENT_LENGTH, IM_DEFAULT_RECALL_WINDOW_MIN } from '@/types/im'
 import type {
   IMConversation,
   IMNewMessagePayload,
   IMReadPayload,
+  IMRecallPayload,
   IMSendResult,
   IMUnlockedPayload,
   IMWsEvent,
@@ -61,6 +62,8 @@ export const useImStore = defineStore('im', () => {
   const peerReadCursors = ref<Record<number, number>>({})
   /** 单条消息正文长度上限，登录后由后端配置下发，前端不硬编码 */
   const maxContentLength = ref(IM_DEFAULT_MAX_CONTENT_LENGTH)
+  /** 消息可撤回时间窗口（分钟），由后端配置下发 */
+  const recallWindowMin = ref(IM_DEFAULT_RECALL_WINDOW_MIN)
 
   const listeners = new Set<EventListener>()
   const recentIds = new Set<number>()
@@ -200,6 +203,8 @@ export const useImStore = defineStore('im', () => {
       const res = await getImConfig()
       const limit = Number(res?.maxContentLength)
       if (Number.isFinite(limit) && limit > 0) maxContentLength.value = limit
+      const window = Number(res?.recallWindowMin)
+      if (Number.isFinite(window) && window > 0) recallWindowMin.value = window
     } catch {
       // 配置拉取失败时沿用兜底值，输入长度仍由后端最终校验
     }
@@ -251,6 +256,8 @@ export const useImStore = defineStore('im', () => {
       senderId: result.senderId,
       msgType: result.msgType,
       content: result.content,
+      replyToContent: result.replyToContent ?? '',
+      recalled: result.recalled ?? false,
       createdAt: result.createdAt,
     }
     conversation.lastMessageAt = result.createdAt
@@ -308,6 +315,8 @@ export const useImStore = defineStore('im', () => {
         senderId: payload.senderId,
         msgType: payload.msgType,
         content: payload.content,
+        replyToContent: payload.replyToContent ?? '',
+        recalled: payload.recalled ?? false,
         createdAt: payload.createdAt,
       }
       conversation.lastMessageAt = payload.createdAt
@@ -342,12 +351,28 @@ export const useImStore = defineStore('im', () => {
     if (conversation) applyUnlocked(conversation)
   }
 
+  /** 撤回事件：若撤回的正是会话最后一条消息，同步列表摘要；消息气泡由页面层按事件替换 */
+  function handleRecalled(payload: IMRecallPayload) {
+    if (!payload || !payload.messageId) return
+    const conversation = findConversation(payload.conversationId)
+    if (conversation && conversation.lastMessage?.id === payload.messageId) {
+      conversation.lastMessage = {
+        ...conversation.lastMessage,
+        content: '',
+        replyToContent: '',
+        recalled: true,
+      }
+    }
+  }
+
   function handleEvent(event: IMWsEvent) {
     if (!event || typeof event.type !== 'string') return
     if (event.type === 'message.new') {
       handleNewMessage(event.data as IMNewMessagePayload)
     } else if (event.type === 'message.read') {
       handleReadMessage(event.data as IMReadPayload)
+    } else if (event.type === 'message.recalled') {
+      handleRecalled(event.data as unknown as IMRecallPayload)
     } else if (event.type === 'conversation.unlocked') {
       handleUnlocked(event.data as IMUnlockedPayload)
     }
@@ -376,6 +401,12 @@ export const useImStore = defineStore('im', () => {
               msgType: message.msgType,
               content: message.content,
               clientMsgId: message.clientMsgId,
+              replyToId: message.replyToId ?? 0,
+              replyToSenderId: message.replyToSenderId ?? 0,
+              replyToMsgType: message.replyToMsgType ?? '',
+              replyToContent: message.replyToContent ?? '',
+              replyRecalled: message.replyRecalled ?? false,
+              recalled: message.recalled ?? false,
               createdAt: message.createdAt,
               unlocked: false,
             },
@@ -509,6 +540,7 @@ export const useImStore = defineStore('im', () => {
     activeConversationId.value = null
     peerReadCursors.value = {}
     maxContentLength.value = IM_DEFAULT_MAX_CONTENT_LENGTH
+    recallWindowMin.value = IM_DEFAULT_RECALL_WINDOW_MIN
     lastSeq.value = 0
     loadedPage = 0
     recentIds.clear()
@@ -523,6 +555,7 @@ export const useImStore = defineStore('im', () => {
     lastSeq,
     peerReadCursors,
     maxContentLength,
+    recallWindowMin,
     myId,
     subscribe,
     start,

@@ -33,13 +33,20 @@ export function sendMessage(data: {
   content: string
   clientMsgId: string
   msgType?: string
+  replyToId?: number
 }) {
   return http.post<IMSendResult>('/pri/message/send', {
     targetId: data.targetId,
     msgType: data.msgType ?? 'text',
     content: data.content,
     clientMsgId: data.clientMsgId,
+    replyToId: data.replyToId ?? 0,
   })
+}
+
+/** 撤回指定消息（仅本人发送且在后端配置的时间窗口内可撤回） */
+export function recallMessage(messageId: number) {
+  return http.post<Record<string, never>>('/pri/message/recall', { messageId })
 }
 
 /** 会话历史消息（倒序，lastId 传本页最旧消息 ID 可继续往前翻） */

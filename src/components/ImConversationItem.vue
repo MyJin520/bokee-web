@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { IMConversation } from '@/types/im'
 import { initialOf } from '@/utils/format'
-import { formatConversationTime } from '@/utils/im'
+import { formatConversationTime, messageBriefPreview } from '@/utils/im'
 
 const props = defineProps<{
   conversation: IMConversation
@@ -15,7 +15,9 @@ const preview = computed(() => {
   const last = props.conversation.lastMessage
   if (!last) return '还没有消息，打个招呼吧'
   const prefix = last.senderId === props.myId ? '我：' : ''
-  return `${prefix}${last.content.replace(/\s+/g, ' ')}`
+  const body = messageBriefPreview(last)
+  if (last.replyToContent && !last.recalled) return `${prefix}引用：${body}`
+  return `${prefix}${body}`
 })
 
 const time = computed(() => formatConversationTime(props.conversation.lastMessageAt))

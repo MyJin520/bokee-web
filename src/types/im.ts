@@ -15,6 +15,8 @@ export interface IMMessageBrief {
   senderId: number
   msgType: string
   content: string
+  replyToContent: string
+  recalled: boolean
   createdAt: string
 }
 
@@ -43,6 +45,18 @@ export interface IMMessage {
   msgType: string
   content: string
   clientMsgId: string
+  /** 被引用消息 ID，0 表示无引用 */
+  replyToId: number
+  /** 被引用消息发送者 ID 快照 */
+  replyToSenderId: number
+  /** 被引用消息类型快照 */
+  replyToMsgType: string
+  /** 被引用消息内容快照 */
+  replyToContent: string
+  /** 被引用消息是否已撤回（引用快照失效标记） */
+  replyRecalled: boolean
+  /** 是否已撤回 */
+  recalled: boolean
   createdAt: string
 }
 
@@ -87,6 +101,12 @@ export interface IMNewMessagePayload {
   msgType: string
   content: string
   clientMsgId: string
+  replyToId: number
+  replyToSenderId: number
+  replyToMsgType: string
+  replyToContent: string
+  replyRecalled: boolean
+  recalled: boolean
   createdAt: string
   /** 离线 sync 补齐的消息不带会话状态 */
   status?: IMConversationStatus
@@ -99,12 +119,22 @@ export interface IMReadPayload {
   lastReadId: number
 }
 
+export interface IMRecallPayload {
+  conversationId: number
+  messageId: number
+  senderId: number
+}
+
 export interface IMUnlockedPayload {
   conversationId: number
   unlockedAt: string
 }
 
-export type IMWsEventType = 'message.new' | 'message.read' | 'conversation.unlocked'
+export type IMWsEventType =
+  | 'message.new'
+  | 'message.read'
+  | 'message.recalled'
+  | 'conversation.unlocked'
 
 export type IMWsEventData = IMNewMessagePayload | IMReadPayload | IMUnlockedPayload
 
@@ -122,7 +152,11 @@ export const IM_CODE_QUOTA_EXCEEDED = 4003
 /** 私信规则配置（由 /pri/message/config 下发，前端不再硬编码限制值） */
 export interface IMConfig {
   maxContentLength: number
+  /** 可撤回时间窗口（分钟） */
+  recallWindowMin: number
 }
 
 /** 配置拉取失败时的兜底长度上限，正常以 IMConfig.maxContentLength 为准 */
 export const IM_DEFAULT_MAX_CONTENT_LENGTH = 2000
+/** 配置拉取失败时的兜底撤回窗口（分钟） */
+export const IM_DEFAULT_RECALL_WINDOW_MIN = 3

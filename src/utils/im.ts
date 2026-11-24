@@ -61,3 +61,57 @@ export function isDifferentDay(prev?: string, next?: string): boolean {
   if (!a || !b) return false
   return !isSameDay(a, b)
 }
+
+/** 文本片段：纯文本或可点击链接（链接由前端白名单协议识别，不做 HTML 转义渲染） */
+export interface TextSegment {
+  kind: 'text' | 'link'
+  text: string
+  url?: string
+}
+
+const LINK_RE = /\bhttps?:\/\/[^\s<>"'（）()【】]+/gi
+/** 链接结尾可能粘连的标点，渲染时剥离 */
+const TRAILING_PUNCT = /[.,!?，。！？、；：]+$/
+
+/** 把纯文本按 http/https 链接拆成片段数组，供模板分别渲染文本与 <a> 标签 */
+export function splitLinkSegments(text: string): TextSegment[] {
+  const source = text ?? ''
+  if (!source) return []
+  const segments: TextSegment[] = []
+  let lastIndex = 0
+  LINK_RE.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = LINK_RE.exec(source)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ kind: 'text', text: source.slice(lastIndex, match.index) })
+    }
+    const raw = match[0]
+    const url = raw.replace(TRAILING_PUNCT, '')
+    segments.push({ kind: 'link', text: url, url })
+    lastIndex = match.index + raw.length
+    LINK_RE.lastIndex = lastIndex
+  }
+  if (lastIndex < source.length) {
+    segments.push({ kind: 'text', text: source.slice(lastIndex) })
+  }
+  return segments
+}
+
+/** 会话列表 / 引用块使用的消息摘要文本 */
+export function messageBriefPreview(message: {
+  msgType: string
+  content: string
+  recalled: boolean
+}): string {
+  if (message.recalled) return '消息已撤回'
+  if (message.msgType === 'image') return '[图片]'
+  return (message.content || '').replace(/\s+/g, ' ')
+}
+
+/** 判断消息是否仍在可撤回时间窗口内（后端最终兜底校验） */
+export function canRecallMessage(createdAt: string, windowMin: number): boolean {
+  const time = Date.parse(createdAt)
+  if (!time || Number.isNaN(time)) return false
+  const window = (windowMin > 0 ? windowMin : 3) * 60 * 1000
+  return Date.now() - time <= window
+}
