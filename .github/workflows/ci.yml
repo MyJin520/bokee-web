@@ -41,32 +41,10 @@ jobs:
       - name: Type check and build
         run: npm run build
 
-      # 5. 读取 VERSION 版本号，写入版本清单并打包 dist
+      # 5. 读取 VERSION、写入版本清单并打包 dist（详见 scripts/ci/package-web.sh）
       - name: Package dist
         id: build
-        run: |
-          APP_VERSION="$(tr -d '\r\n' < VERSION)"
-          test -n "$APP_VERSION"
-          TARBALL="bokee-web-${APP_VERSION}.tar.gz"
-
-          # 版本清单随产物发布，服务器据此确认 dist 里是哪个版本
-          cat > dist/version.json <<EOF
-          {
-            "version": "${APP_VERSION}",
-            "commit": "$(git rev-parse --short HEAD)",
-            "builtAt": "$(TZ=Asia/Shanghai date '+%F %T')"
-          }
-          EOF
-
-          # 压缩包内为 dist 的平铺内容，部署脚本解压后直接落到 nginx 的 dist/
-          tar -czf "$TARBALL" -C dist .
-          test -s "$TARBALL"
-          tar -tzf "$TARBALL" | grep -qx './index.html'
-          tar -tzf "$TARBALL" | grep -qx './version.json'
-
-          echo "version=$APP_VERSION" >> "$GITHUB_OUTPUT"
-          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
-          echo "构建版本: $APP_VERSION（产物 $(du -h "$TARBALL" | cut -f1)）"
+        run: bash scripts/ci/package-web.sh
 
       # 6. 上传产物，供下游任务下载
       - name: Upload web dist artifact
@@ -87,25 +65,19 @@ jobs:
       MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
       MINIO_BUCKET: ${{ vars.MINIO_BUCKET || 'bokee-artifacts' }}
     steps:
-      # 1. 下载构建任务上传的产物
+      # 1. 拉取仓库代码（获取 scripts/ci 下的上传脚本）
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # 2. 下载构建任务上传的产物
       - name: Download web dist artifact
         uses: actions/download-artifact@v4
         with:
           name: bokee-web
 
-      # 2. 下载 mc 客户端，配置 MinIO 并按版本号上传
+      # 3. 下载 mc 客户端，配置 MinIO 并按版本号上传
       - name: Upload package to MinIO
-        run: |
-          curl -fsSL -o mc "https://github.com/minio/mc/releases/download/RELEASE.2025-08-13T08-35-41Z/mc.linux-amd64.RELEASE.2025-08-13T08-35-41Z"
-          chmod +x mc
-
-          ./mc alias set minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
-
-          cp "bokee-web-${APP_VERSION}.tar.gz" bokee-web.tar.gz
-
-          # 版本目录留档 + 覆盖 latest 固定文件
-          ./mc cp bokee-web.tar.gz "minio/$MINIO_BUCKET/web/$APP_VERSION/bokee-web.tar.gz"
-          ./mc cp "minio/$MINIO_BUCKET/web/$APP_VERSION/bokee-web.tar.gz" "minio/$MINIO_BUCKET/web/bokee-web.tar.gz"
+        run: bash scripts/ci/push-minio.sh
 
   # 部署到服务器：按版本号从 MinIO 拉取产物并替换 dist
   deploy-job:
