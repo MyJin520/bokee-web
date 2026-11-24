@@ -19,8 +19,13 @@ EOF
 # 压缩包内为 dist 的平铺内容
 tar -czf "$TARBALL" -C dist .
 test -s "$TARBALL"
-tar -tzf "$TARBALL" | grep -qx './index.html'
-tar -tzf "$TARBALL" | grep -qx './version.json'
+
+# 包内条目断言：列表先落临时文件，避免 tar 经管道被 grep 提前关闭而触发 SIGPIPE
+LIST_FILE="$(mktemp)"
+trap 'rm -f "$LIST_FILE"' EXIT
+tar -tzf "$TARBALL" > "$LIST_FILE"
+grep -qx './index.html' "$LIST_FILE"
+grep -qx './version.json' "$LIST_FILE"
 
 # 回传版本号与包名给下游 job
 echo "version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
