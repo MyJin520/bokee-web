@@ -1,0 +1,97 @@
+name: Release
+
+# 推送到 release 分支时自动发布 GitHub Release；也支持在 Actions 页面手动触发
+# 与 bokee-server 的 release 流水线一致：只发制品到 GitHub Release，不部署服务器
+on:
+  push:
+    branches: [ release ]
+  workflow_dispatch:
+
+# 创建 Release、上传附件需要写仓库内容的权限
+permissions:
+  contents: write
+
+env:
+  APP_NAME: bokee-web
+  NODE_VERSION: "24"
+
+jobs:
+  release:
+    name: Build dist and publish GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 拉取完整历史，便于生成变更日志
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 2. 读取 VERSION 文件作为 Release 标签（形如 v1.0.4）
+      - name: Read version
+        id: version
+        run: |
+          VERSION="$(tr -d '\r\n' < VERSION)"
+          test -n "$VERSION" || { echo "VERSION 文件为空" >&2; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION"
+
+      # 3. 校验版本号语义格式，避免打出非法 tag
+      - name: Validate semantic version
+        run: |
+          case "${{ steps.version.outputs.version }}" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "VERSION 必须是 vX.Y.Z 形式（如 v1.0.4）" >&2; exit 1 ;;
+          esac
+
+      # 4. 安装 Node 并缓存依赖
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # 5. 按 lock 文件精确安装依赖
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # 6. 生产构建、打包 tar.gz + SHA256（详见 scripts/release/build-package.sh）
+      - name: Build and package
+        id: package
+        env:
+          APP_NAME: ${{ env.APP_NAME }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/release/build-package.sh
+
+      # 7. 从 changelog.md 解析当前版本标题与日志（手动维护；无匹配回退自动生成）
+      - name: Parse changelog
+        id: changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/release/parse-changelog.sh
+
+      # 8. 若该版本 tag 已存在则跳过，避免重复发布覆盖已有制品
+      - name: Check release tag exists
+        id: tag-check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh api "repos/${{ github.repository }}/git/refs/tags/${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.version.outputs.version }} 已存在，跳过发布"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 9. 创建 Release 并上传静态包与校验和；标题/正文取自 changelog.md，无匹配时回退自动生成
+      - name: Publish GitHub Release
+        if: steps.tag-check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.changelog.outputs.release_name || format('Release {0}', steps.version.outputs.version) }}
+          body_path: ${{ steps.changelog.outputs.body_path }}
+          generate_release_notes: ${{ steps.changelog.outputs.found == 'false' }}
+          files: |
+            dist/${{ steps.package.outputs.archive }}
+            dist/${{ steps.package.outputs.archive }}.sha256
