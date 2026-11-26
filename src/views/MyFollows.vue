@@ -5,7 +5,7 @@ import { useReactions } from '@/composables/useReactions'
 import { useUserStore } from '@/stores/user'
 import { useUiStore } from '@/stores/ui'
 import type { UserActionListItem } from '@/types'
-import { formatNumber } from '@/utils/format'
+import { formatNumber, initialOf } from '@/utils/format'
 
 const userStore = useUserStore()
 const ui = useUiStore()
@@ -17,6 +17,8 @@ const page = ref(1)
 const pageSize = 10
 const loading = ref(true)
 const errorMessage = ref('')
+/** 头像加载失败的 actionId 集合，失败后回退到首字母占位 */
+const avatarError = ref<Record<number, boolean>>({})
 
 const pages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 
@@ -32,6 +34,7 @@ async function load() {
     })
     items.value = res.list
     total.value = res.total
+    avatarError.value = {}
   } catch (error: unknown) {
     errorMessage.value = error instanceof Error ? error.message : '关注加载失败，请稍后重试。'
     items.value = []
@@ -92,7 +95,16 @@ onMounted(async () => {
             class="follows-main"
             :to="{ name: 'user-profile', params: { id: item.targetId } }"
           >
-            <span class="follows-avatar">{{ (item.targetTitle || '?').slice(0, 1) }}</span>
+            <span class="follows-avatar">
+              <img
+                v-if="item.targetAvatar && !avatarError[item.actionId]"
+                :src="item.targetAvatar"
+                :alt="item.targetTitle"
+                loading="lazy"
+                @error="avatarError[item.actionId] = true"
+              />
+              <template v-else>{{ initialOf(item.targetTitle) }}</template>
+            </span>
             <span class="follows-name">{{ item.targetTitle || '未命名作者' }}</span>
           </router-link>
           <button
@@ -174,10 +186,17 @@ onMounted(async () => {
   display: grid;
   place-items: center;
   border-radius: 50%;
+  overflow: hidden;
   background: var(--coral);
   color: #fff;
   font-family: 'Playfair Display', Georgia, serif;
   font-size: 16px;
+}
+
+.follows-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .follows-name {

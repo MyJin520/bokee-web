@@ -113,6 +113,7 @@ export interface UserActionListItem {
   targetType: TargetType
   targetId: number
   targetTitle: string
+  targetAvatar: string
 }
 
 /** ============ 用户反馈 ============ */
