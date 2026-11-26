@@ -1,5 +1,5 @@
 import { http } from './request'
-import type { JwtResp, PageData, UserBrief, UserInfo } from '@/types'
+import type { FollowerItem, JwtResp, PageData, UserBrief, UserInfo } from '@/types'
 
 /** 用户登录 */
 export function login(userName: string, password: string) {
@@ -53,6 +53,18 @@ export function findUsers(params: { id?: number; name?: string; page?: number; p
     name: params.name ?? '',
     page: params.page ?? 1,
     pageSize: params.pageSize ?? 12,
+  })
+}
+
+/**
+ * 分页获取粉丝列表（需登录）
+ * userId 省略时返回当前登录用户的粉丝；传入他人 ID 可查看其粉丝
+ */
+export function getFollowers(params: { userId?: number; page?: number; pageSize?: number }) {
+  return http.post<PageData<FollowerItem>>('/pri/user/followers', {
+    userId: params.userId ?? 0,
+    page: params.page ?? 1,
+    pageSize: params.pageSize ?? 10,
   })
 }
 

@@ -89,6 +89,13 @@ export interface UserBrief {
   createdAt: string
 }
 
+/** 粉丝列表项（followers 返回：id / 昵称 / 头像） */
+export interface FollowerItem {
+  id: number
+  name: string
+  avatar: string
+}
+
 /** 文件上传记录 */
 export interface UploadedFile {
   id: number

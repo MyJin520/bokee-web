@@ -60,6 +60,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/my/followers',
+      name: 'my-followers',
+      component: () => import('@/views/MyFollowers.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/feedback',
       name: 'feedback',
       component: () => import('@/views/FeedbackCenter.vue'),

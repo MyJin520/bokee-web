@@ -278,6 +278,9 @@ onMounted(async () => {
           <button class="quick-row" type="button" @click="router.push('/my/follows')">
             ＋ 我的关注
           </button>
+          <button class="quick-row" type="button" @click="router.push('/my/followers')">
+            👥 我的粉丝
+          </button>
           <button class="quick-row" type="button" @click="router.push('/feedback')">
             💬 反馈中心
           </button>
